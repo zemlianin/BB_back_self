@@ -12,6 +12,7 @@ from bb_back.core.models import Submit, Round
 from bb_back.core.utils.view_utils import failed_validation_response, response
 from bb_back.core.views.utils.base_serializers import BaseResponseSerializer
 from bb_back.settings import SUBMIT_MAX_SIZE
+from services.submit_service import SubmitService
 
 
 class SubmitRequestSerializer(serializers.Serializer):
@@ -47,44 +48,34 @@ class SubmitView(APIView):
 
         team = request.user.team
         request_data = SubmitRequestSerializer(data=request.data)
+        submit_file = request.FILES.get("file")
 
         if not request_data.is_valid() or request.FILES.get("file") is None:
             return failed_validation_response(serializer=request_data)
-
-        submit_file = request.FILES.get("file")
 
         if submit_file.size > SUBMIT_MAX_SIZE:
             return failed_validation_response(serializer=request_data)
 
         submit_schema = request_data.data
         round = Round.objects.filter(id=submit_schema.get("round_num")).first()
+
         if not round:
             return response(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 data={},
-                message=
-                f"Round with id={submit_schema.get('round_num')} not found")
+                message=f"Round with id={submit_schema.get('round_num')} not found")
+
         try:
-            csv_file = csv.DictReader(codecs.iterdecode(submit_file, 'utf-8'))
-            for line in csv_file:
-                line: dict
-                if list(line.keys()) != ['id', 'rate']:
-                    raise ValueError('CSV file columns must be: "id", "rate"')
-                if not all([value.isnumeric() for value in line.values()]):
-                    raise ValueError(
-                        'All provided values must be valid integers')
+            response_data = SubmitService.save_submit(
+                submit_file, team, submit_schema)
+
+            response_data.is_valid()
+            data = Response(data=response_data.data, status=status.HTTP_200_OK)
+
+            return SubmitResponseSerializer(data)
+
         except ValueError as ex:
             return response(status_code=status.HTTP_400_BAD_REQUEST,
                             data={},
                             message=f"{str(ex)}")
 
-        Submit.objects.create(file=submit_file,
-                              id_command=team.id,
-                              round_num=submit_schema.get("round_num"),
-                              score=0)
-
-        response_data = SubmitResponseSerializer(
-            data={"response_data": submit_schema})
-
-        response_data.is_valid()
-        return Response(data=response_data.data, status=status.HTTP_200_OK)
