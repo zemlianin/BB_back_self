@@ -7,12 +7,13 @@ from bb_back.core.constants import EMAIL_TEMPLATE_NAMES, EMAIL_SUBJECTS
 
 from bb_back import settings
 from bb_back.core.models import EmailLog, User, EmailVerificationCode
+from bb_back.core.models.default_email_builder import DefaultEmailBuilder
 
 
 class EmailSender:
     TEMP_CONSTANT_LINK = "https://bankingbattle.ru"
 
-    def __init__(self, to_users_emails: List[str], email_type: int):
+    def __init__(self, to_users_emails: List[str], email_type: int, message_builder: DefaultEmailBuilder):
         self._email_templates_path = os.path.join(settings.BASE_DIR,
                                                   settings.CORE_TEMPLATES_PATH,
                                                   'emails')
@@ -23,13 +24,12 @@ class EmailSender:
             email for email in to_users_emails if is_valid_email(email)
         ]
         self._email_type = email_type
+        self.message_builder = message_builder
 
     def send_email(self, context: Dict[str, str]) -> None:
         email_template = self._get_email_template()
         email_content = email_template.format(**context)
-        msg = EmailMultiAlternatives(subject=self._email_subject,
-                                     from_email=self._from_email,
-                                     to=self._to_users_emails)
+        msg = self.message_builder.get_email_message()
         msg.attach_alternative(email_content, "text/html")
         msg.send()
         self._log_email()
@@ -52,3 +52,4 @@ class EmailSender:
         EmailVerificationCode.objects.create(user=user, code=verification_code)
         link = f"{cls.TEMP_CONSTANT_LINK}"
         return link
+

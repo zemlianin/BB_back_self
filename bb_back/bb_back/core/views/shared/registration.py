@@ -10,6 +10,7 @@ from bb_back.core.utils import EmailSender, is_valid_email
 from bb_back.core.utils.view_utils import response, failed_validation_response
 from bb_back.core.views.utils.base_serializers import BaseResponseSerializer, BadRequestResponseSerializer
 from bb_back.settings import ADMIN_KEY
+from bb_back.core.models.default_email_builder import DefaultEmailBuilder
 
 
 class BaseRegistrationSerializer(serializers.Serializer):
@@ -65,8 +66,7 @@ class RegistrationUserView(APIView):
             return response(
                 data={},
                 status_code=status.HTTP_400_BAD_REQUEST,
-                message=
-                f"Registration failed: email {user_schema.get('email')} is not valid."
+                message=f"Registration failed: email {user_schema.get('email')} is not valid."
             )
         hashed_password = make_password(user_schema.get('password'))
         is_valid_admin_key = user_schema.get("admin_key") == ADMIN_KEY
@@ -77,11 +77,18 @@ class RegistrationUserView(APIView):
                     password=hashed_password,
                     is_staff=is_valid_admin_key)
         user.save()
+
+        message_builder = DefaultEmailBuilder(from_email=self._from_email,
+                                              subject=self._email_subject,
+                                              to=self._to_users_emails)
+
         EmailSender(to_users_emails=(user_schema.get('email'), ),
-                    email_type=EmailTypes.NEW_USER_GREETING_EMAIL).send_email(
+                    email_type=EmailTypes.NEW_USER_GREETING_EMAIL,
+                    message_builder=message_builder).send_email(
                         context=dict(email_verification_link=EmailSender.
                                      get_mail_verification_link(user=user)))
         response_data = RegistrationResponseSerializer(
             data={"response_data": user_schema})
         response_data.is_valid()
         return Response(data=response_data.data, status=status.HTTP_200_OK)
+
